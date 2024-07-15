@@ -78,3 +78,7 @@ def create_files():
     for date, message in dates_and_messages:
         with open(f"tg_messages/{date}", 'w', encoding='UTF-8') as f:
             f.write(message)
+
+
+if __name__ == '__main__':
+    create_files()

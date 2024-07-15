@@ -1,8 +1,7 @@
-import pprint
 import locale
 import re
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import requests
 from bs4 import BeautifulSoup
@@ -10,6 +9,7 @@ from requests.exceptions import RequestException
 
 from config_handlers import load_config
 from date_handlers import get_start_date, get_final_date, move_start_date_in_config_week_forward
+from logger import logger
 
 locale.setlocale(locale.LC_ALL, 'de_DE.UTF-8')
 
@@ -32,19 +32,32 @@ def get_soup(url):
         r.raise_for_status()
         return BeautifulSoup(r.content, 'html.parser')
     except RequestException as e:
-        print(f"An error occurred while fetching data from {url}: {str(e)}")
+        logger.error(f"An error occurred while fetching data from {url}: {str(e)}")
         return None
 
 
 def get_planlos_events(start_date: datetime.date, final_date: datetime.date):
+    logger.info("Getting events from Planlos Leipzig...")
     soup = get_soup(PLANLOS_URL)
     if not soup:
+        logger.error("No data from Planlos Leipzig")
         return {}
-    entry_content = soup.find('div', {"class": "entry-content"})
-    headers = entry_content.find_all('h3')
+    try:
+        entry_content = soup.find('div', {"class": "entry-content"})
+    except AttributeError:
+        logger.error("No entry-content found")
+        return
+    try:
+        headers = entry_content.find_all('h3')
+    except AttributeError:
+        logger.error("No headers found")
+        return
+
     events = defaultdict(list)
 
     for header in headers:
+        logger.debug("Header:")
+        logger.debug(header)
         current_date = datetime.strptime(header.text, "%a, %d. %B %Y").date()
         if current_date < start_date:
             continue
@@ -52,9 +65,10 @@ def get_planlos_events(start_date: datetime.date, final_date: datetime.date):
             break
 
         event_date = str(current_date)
-        day_table = header.find_next("table")
-        events_rows = day_table.find_all("tr")
-        for event_row in events_rows:
+        logger.info(f"Fetching events for {event_date}")
+        next_tr = header.find_next("tr")
+        while next_tr and next_tr.find("h3") is None:
+            event_row = next_tr
             event_cells = event_row.find_all("td")
             time_cell = event_cells[0]
             event_cell = event_cells[1]
@@ -69,12 +83,16 @@ def get_planlos_events(start_date: datetime.date, final_date: datetime.date):
                 "URL": event_cell.a.get("href")
             }
             events[event_date].append(event)
+            next_tr = event_row.find_next("tr")
+    logger.info("Events from Planlos Leipzig are fetched")
     return events
 
 
 def get_sachsenpunk_events(start_date: datetime.date, final_date: datetime.date):
+    logger.info("Getting events from Sachsenpunk...")
     soup = get_soup(SACHSENPUNK_URL)
     if not soup:
+        logger.error("No data from Sachsenpunk")
         return {}
     entry_content = soup.find('div', {"class": "entry-content"})
     p_tags = entry_content.find_all('p')
@@ -105,12 +123,15 @@ def get_sachsenpunk_events(start_date: datetime.date, final_date: datetime.date)
                 if "Leipzig" in event:
                     event_str = event.lstrip("Leipzig – ")
                     events[events_date].append(event_str)
+    logger.info("Events from Sachsenpunk are fetched")
     return events
 
 
 def get_songkick_events(start_date: datetime.date, final_date: datetime.date):
+    logger.info("Getting events from Songkick...")
     soup = get_soup(SONGKICK_URL)
     if not soup:
+        logger.error("No data from Songkick")
         return {}
     event_elements = soup.find_all('li', {"class": "event-listings-element"})
     events = defaultdict(list)
@@ -154,6 +175,7 @@ def get_songkick_events(start_date: datetime.date, final_date: datetime.date):
             venue_name = venue_link.text
         event['venue_name'] = venue_name
         event['venue_URL'] = venue_url
+    logger.info("Events from Songkick are fetched")
     return events
 
 
