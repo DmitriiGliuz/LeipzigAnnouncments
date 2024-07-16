@@ -1,6 +1,7 @@
 from datetime import datetime
 from parsers import get_all_events
 from itertools import chain
+from logger import logger
 
 
 CALENDAR_SYMBOL = '🗓'
@@ -10,10 +11,17 @@ LOCATION_SYMBOL = '📍 '
 
 
 def make_hyperlink(url, resource_name, symbol=URL_SYMBOL):
+    """Returns a string with a hyperlink to the given URL For use in Telegram messages"""
     return f"{symbol}<a href=\"{url}\">{resource_name}</a>"
 
 
 def make_strings_for_planlos(events: list[dict]) -> list[str]:
+    """
+    Returns a list of strings on Planlos Leipzig events for a given date in a format suitable for Telegram messages
+    :param events:
+    :return:
+    """
+    logger.info(f"Making strings for Planlos events")
     output_strings = []
     for event in events:
         place = event['place']
@@ -29,10 +37,22 @@ def make_strings_for_planlos(events: list[dict]) -> list[str]:
 
 
 def make_strings_for_sachsen_punk(events: list[str]) -> list[str]:
+    """
+    Returns a list of strings on Sachsen Punk events for a given date in a format suitable for Telegram messages
+    :param events:
+    :return:
+    """
+    logger.info(f"Making strings for Sachsen Punk events")
     return [f"{BULLET_SYMBOL} {event}\n\n" for event in events]
 
 
 def make_strings_for_songkick(events: list[dict]) -> list[str]:
+    """
+    Returns a list of strings on Songkick events for a given date in a format suitable for Telegram messages
+    :param events:
+    :return:
+    """
+    logger.info(f"Making strings for Songkick events")
     output_strings = []
     for event in events:
         output_strings.append(f'{BULLET_SYMBOL} ')
@@ -49,6 +69,10 @@ def make_strings_for_songkick(events: list[dict]) -> list[str]:
 
 
 def messages_generator():
+    """
+    Generates messages for each date with events from all sources
+    :return:
+    """
     all_events = get_all_events()
     planlos_events, sachsenpunk_events, songkick_events = all_events.values()
     all_dates = list(set(chain(planlos_events, sachsenpunk_events, songkick_events)))
@@ -59,6 +83,7 @@ def messages_generator():
         "🎵 Songkick": (songkick_events, make_strings_for_songkick)
     }
     for date in all_dates:
+        logger.info(f"Generating message for {date}")
         all_strings = []
         date_obj = datetime.strptime(date, "%Y-%m-%d")
         date_str = date_obj.strftime("%A, %B %d, %Y")
@@ -70,13 +95,20 @@ def messages_generator():
                 all_strings += handler(events_dict[date])
                 all_strings.append("\n")
         message_text = ''.join(all_strings)
+        logger.info(f"Message for {date} generated successfully with {len(message_text)} characters")
         yield date, message_text
 
 
 def create_files():
+    """
+    Creates files with messages for each date
+    :return:
+    """
+    logger.info("Creating files with messages")
     dates_and_messages = messages_generator()
     for date, message in dates_and_messages:
         with open(f"tg_messages/{date}", 'w', encoding='UTF-8') as f:
+            logger.info(f"Writing message for {date} to file {f.name}")
             f.write(message)
 
 
