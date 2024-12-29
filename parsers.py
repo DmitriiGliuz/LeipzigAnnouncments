@@ -91,7 +91,7 @@ def get_planlos_events(start_date: datetime.date, final_date: datetime.date):
     logger.info("Parsing each date")
     for date_header in date_headers:
         logger.info(f"Parsing date date_header: {date_header.text}")
-        current_date = datetime.strptime(date_header.text, "%a, %d. %B %Y").date()
+        current_date = datetime.strptime(date_header.text, "%a., %d. %B %Y").date()
         if current_date < start_date:
             logger.info(f"Skipping {current_date} because it is before the start date")
             continue

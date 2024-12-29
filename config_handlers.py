@@ -139,6 +139,6 @@ def set_config_property(_property: str, _value):
     :return:
     """
     config = load_config()
-    logging.info(f"Setting property {_property} to {_value}")
+    logger.info(f"Setting property {_property} to {_value}")
     config[_property] = _value
     save_config(config)
