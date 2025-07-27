@@ -2,6 +2,8 @@ import locale
 import re
 from collections import defaultdict
 from datetime import datetime, date
+from typing import Optional
+
 import requests
 from bs4 import BeautifulSoup
 from requests.exceptions import RequestException
@@ -30,7 +32,7 @@ def add_spaces(string: str) -> str:
     return result
 
 
-def get_soup(url):
+def get_soup(url: str) -> Optional[BeautifulSoup]:
     """
     Fetches data from the given URL and returns BeautifulSoup object
     :param url:
@@ -160,34 +162,36 @@ def get_sachsenpunk_events(start_date: date, final_date: date):
 
     for p in p_tags:
         logger.info(f"Parsing p tag")
-        if re.match(r"\d+\.\d+\.", p.text):
-            logger.info("Checking if there is announcement for the new year")
-            # Checking if there is an announcement for the new year
-            current_month = int(p.text[3:5])
-            if current_month < previous_month or (month_now == 12 and current_month == 1):
-                logger.info("Announcement for the new year is found")
-                year = year_now + 1
-            previous_month = current_month
+        date_match = re.match(r"((\d{1,2})\.(\d{1,2})\.)", p.text)
+        if not date_match:
+            continue
+        day = int(date_match.group(2))
+        month = int(date_match.group(3))
+        logger.info("Checking if there is announcement for the new year")
+        # Checking if there is an announcement for the new year
+        if month < previous_month or (month_now == 12 and month == 1):
+            logger.info("Announcement for the new year is found")
+            year = year_now + 1
+        previous_month = month
 
-            date_str = p.text[:6] + str(year)
-            current_date = datetime.strptime(date_str, "%d.%m.%Y").date()
-            logger.info(f"Current date: {current_date}")
-            if current_date < start_date:
-                logger.info(f"Skipping {current_date} because it is before the start date")
-                continue
-            if current_date >= final_date:
-                logger.info(f"Breaking the loop because {current_date} is after the final date")
-                break
+        current_date = datetime(year, month, day).date()
+        logger.info(f"Current date: {current_date}")
+        if current_date < start_date:
+            logger.info(f"Skipping {current_date} because it is before the start date")
+            continue
+        if current_date >= final_date:
+            logger.info(f"Breaking the loop because {current_date} is after the final date")
+            break
 
-            events_date = str(current_date)
-            current_events = p.find_next('p').text.split("\n")
-            for event in current_events:
-                logger.info(f"Event: {event} is fetched")
-                if "Leipzig" in event:
-                    logger.info("Checking if the event is in Leipzig")
-                    event_str = event.lstrip("Leipzig – ")
-                    events[events_date].append(event_str)
-                    logger.info(f"Event: {event_str} is added to the events")
+        events_date = str(current_date)
+        current_events = p.find_next('p').text.split("\n")
+        for event in current_events:
+            logger.info(f"Event: {event} is fetched")
+            if "Leipzig" in event:
+                logger.info("Checking if the event is in Leipzig")
+                event_str = event.lstrip("Leipzig – ")
+                events[events_date].append(event_str)
+                logger.info(f"Event: {event_str} is added to the events")
     logger.info("Events from Sachsenpunk are fetched")
     return events
 
