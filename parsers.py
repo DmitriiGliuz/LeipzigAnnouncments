@@ -12,7 +12,10 @@ from config_handlers import load_config
 from date_handlers import get_start_date, get_final_date, move_start_date_in_config_week_forward
 from logger import logger
 
-locale.setlocale(locale.LC_ALL, 'de_DE.UTF-8')
+try:
+    locale.setlocale(locale.LC_ALL, 'de_DE.UTF-8')
+except locale.Error:
+    logger.warning("Could not set locale to de_DE.UTF-8")
 
 
 def add_spaces(string: str) -> str:
@@ -23,10 +26,10 @@ def add_spaces(string: str) -> str:
     :param string: The input string in which spaces need to be added based
                    on predefined patterns.
     :return: A modified string with spaces inserted between specific patterns.
-    :rtype: Str
+    :rtype: str
     """
     result = string
-    pattern = r'([a-zA-ZÄÃ¤ÖÜäöüß-]+)(\d{2}\.)|(\d{1,2}:\d{2})(\d{2}.\d{2}.\d{4})'
+    pattern = r'([a-zA-ZÄÃ¤ÖÜäöüß-]+)(\d{2}\.)|(\d{1,2}:\d{2})(\d{2}\.\d{2}\.\d{4})'
     if re.search(pattern, string):
         result = re.sub(pattern, r'\1\3 \2\4', string)
     return result
@@ -40,7 +43,7 @@ def get_soup(url: str) -> Optional[BeautifulSoup]:
     """
     try:
         logger.info(f"Fetching data from {url}")
-        r = requests.get(url)
+        r = requests.get(url, timeout=30)
         r.raise_for_status()
         logger.info(f"Data from {url} is fetched")
         return BeautifulSoup(r.content, 'html.parser')
@@ -49,7 +52,7 @@ def get_soup(url: str) -> Optional[BeautifulSoup]:
         return None
 
 
-def get_entry_content(soup: BeautifulSoup):
+def get_entry_content(soup: BeautifulSoup) -> Optional[BeautifulSoup]:
     """
     Finds entry-content in the given soup
     :param soup:
@@ -63,14 +66,14 @@ def get_entry_content(soup: BeautifulSoup):
         return None
 
 
-def get_website_content(url: str):
+def get_website_content(url: str) -> Optional[BeautifulSoup]:
     soup = get_soup(url)
     if not soup:
         return None
     return get_entry_content(soup)
 
 
-def get_planlos_events(start_date: date, final_date: date):
+def get_planlos_events(start_date: date, final_date: date) -> dict:
     """
     Fetches events from Planlos Leipzig
     :param start_date:
@@ -86,6 +89,9 @@ def get_planlos_events(start_date: date, final_date: date):
         logger.info("Finding h3 tags with dates")
         date_headers = entry_content.find_all('h3')
     except AttributeError:
+        logger.error("No date_headers found")
+        return {}
+    if not date_headers:
         logger.error("No date_headers found")
         return {}
 
@@ -136,7 +142,7 @@ def get_planlos_events(start_date: date, final_date: date):
     return events
 
 
-def get_sachsenpunk_events(start_date: date, final_date: date):
+def get_sachsenpunk_events(start_date: date, final_date: date) -> dict:
     """
     Fetches events from Sachsenpunk
     :param start_date:
@@ -158,23 +164,26 @@ def get_sachsenpunk_events(start_date: date, final_date: date):
     year_now = datetime.now().year
     month_now = datetime.now().month
     previous_month = 0
-    year = year_now
+    processing_year = year_now
 
     for p in p_tags:
         logger.info(f"Parsing p tag")
         date_match = re.match(r"((\d{1,2})\.(\d{1,2})\.)", p.text)
         if not date_match:
             continue
-        day = int(date_match.group(2))
-        month = int(date_match.group(3))
+        processing_day = int(date_match.group(2))
+        processing_month = int(date_match.group(3))
         logger.info("Checking if there is announcement for the new year")
         # Checking if there is an announcement for the new year
-        if month < previous_month or (month_now == 12 and month == 1):
+        if previous_month > 0 and processing_month < previous_month:
             logger.info("Announcement for the new year is found")
-            year = year_now + 1
-        previous_month = month
+            processing_year +=1
+        elif month_now == 12 and processing_month <= 3:
+            logger.info("Announcement for the new year is found")
+            processing_year = year_now + 1
+        previous_month = processing_month
 
-        current_date = datetime(year, month, day).date()
+        current_date = datetime(processing_year, processing_month, processing_day).date()
         logger.info(f"Current date: {current_date}")
         if current_date < start_date:
             logger.info(f"Skipping {current_date} because it is before the start date")
@@ -189,7 +198,7 @@ def get_sachsenpunk_events(start_date: date, final_date: date):
             logger.info(f"Event: {event} is fetched")
             if "Leipzig" in event:
                 logger.info("Checking if the event is in Leipzig")
-                event_str = event.lstrip("Leipzig – ")
+                event_str = event.removeprefix("Leipzig – ")
                 events[events_date].append(event_str)
                 logger.info(f"Event: {event_str} is added to the events")
     logger.info("Events from Sachsenpunk are fetched")
@@ -204,8 +213,7 @@ def get_full_songkick_url(ending: str) -> str:
     """
     return "https://www.songkick.com" + ending
 
-
-def get_songkick_events(start_date: date, final_date: date):
+def get_songkick_events(start_date: date, final_date: date) -> dict:
     """
     Fetches events from Songkick
     :param start_date:
@@ -263,7 +271,13 @@ def get_songkick_events(start_date: date, final_date: date):
         try:
             logger.info("Finding event-link and venue-link")
             event_link = div_artist.find('a', {"class": "event-link"})
+            event_href = event_link.get('href')
+            if not event_href:
+                raise AttributeError("No event-link found")
             venue_link = div_artist.find('a', {"class": "venue-link"})
+            venue_href = venue_link.get('href')
+            if not venue_href:
+                raise AttributeError("No venue-link found")
         except AttributeError:
             logger.error("No event-link and venue-link found")
             continue
@@ -273,14 +287,14 @@ def get_songkick_events(start_date: date, final_date: date):
         except AttributeError:
             logger.error("No event name found")
             continue
-        event_url = get_full_songkick_url(event_link['href'])
+        event_url = get_full_songkick_url(event_href)
         event['name'] = event_name
         event['URL'] = event_url
         venue_name = None
         venue_url = None
 
         if venue_link:
-            venue_url = get_full_songkick_url(venue_link['href'])
+            venue_url = get_full_songkick_url(venue_href)
             venue_name = venue_link.text
         event['venue_name'] = venue_name
         event['venue_URL'] = venue_url

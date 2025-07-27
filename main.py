@@ -210,7 +210,8 @@ def main_menu():
         elif main_menu_action == EDIT_CONFIG:
             edit_config_screen()
 
-
-if config_is_valid:
-    main_menu()
-print("Bye!")
+if __name__ == "__main__":
+    if config_is_valid:
+        set_start_date_to_closest_monday()
+        main_menu()
+    print("Bye!")
