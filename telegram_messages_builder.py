@@ -2,6 +2,7 @@ from datetime import datetime
 from parsers import get_all_events
 from itertools import chain
 from logger import logger
+import html
 
 
 CALENDAR_SYMBOL = '🗓'
@@ -9,8 +10,12 @@ BULLET_SYMBOL = '🔹'
 URL_SYMBOL = '🔗'
 LOCATION_SYMBOL = '📍 '
 
+def escape_html_text(text):
+    """Escapes HTML special characters in the given text"""
+    return html.escape(text) if text else text
 
-def make_hyperlink(url, resource_name, symbol=URL_SYMBOL):
+
+def make_hyperlink_part(url, resource_name, symbol=URL_SYMBOL):
     """Returns a string with a hyperlink to the given URL For use in Telegram messages"""
     return f"{symbol}<a href=\"{url}\">{resource_name}</a>"
 
@@ -24,15 +29,24 @@ def make_strings_for_planlos(events: list[dict]) -> list[str]:
     logger.info(f"Making strings for Planlos events")
     output_strings = []
     for event in events:
-        place = event['place']
-        if place:
-            place_text = f"\n{LOCATION_SYMBOL}{place}"
+        time = event['time']
+        name = event['name']
+        if not name:
+            logger.warning(f"Event name is missing for {event}")
+            continue
         else:
-            place_text = ""
+            name = escape_html_text(name)
+        place = escape_html_text(event['place'])
+        url = event['URL']
+        if place:
+            place_part = f"\n{LOCATION_SYMBOL}{place}"
+        else:
+            place_part = ""
+        hyperlink_part = make_hyperlink_part(url, 'event link')
         output_strings.append(f"""\
-{BULLET_SYMBOL} <b>{event['time']}:</b>
-{event['name']}{place_text}
-{make_hyperlink(event['URL'], 'event link')}\n\n""")
+{BULLET_SYMBOL} <b>{time}:</b>
+{name}{place_part}
+{hyperlink_part}\n\n""")
     return output_strings
 
 
@@ -43,7 +57,7 @@ def make_strings_for_sachsen_punk(events: list[str]) -> list[str]:
     :return:
     """
     logger.info(f"Making strings for Sachsen Punk events")
-    return [f"{BULLET_SYMBOL} {event}\n\n" for event in events]
+    return [f"{BULLET_SYMBOL} {escape_html_text(event)}\n\n" for event in events]
 
 
 def make_strings_for_songkick(events: list[dict]) -> list[str]:
@@ -56,15 +70,25 @@ def make_strings_for_songkick(events: list[dict]) -> list[str]:
     output_strings = []
     for event in events:
         output_strings.append(f'{BULLET_SYMBOL} ')
-        if event['time']:
-            output_strings.append(f"<b>{event['time']}:</b> ")
-        output_strings.append(f"{event['name']}\n")
-        if event['venue_URL']:
-            venue_url = event["venue_URL"]
-            venue_name = event["venue_name"]
-            output_strings.append(f'{make_hyperlink(venue_url, venue_name, LOCATION_SYMBOL)}   ')
-        event_url = event['URL']
-        output_strings.append(f" {make_hyperlink(event_url, ' event link')}\n\n")
+        name = event.get('name')
+        if not name:
+            logger.warning(f"Event name is missing for {event}")
+            continue
+        else:
+            name = escape_html_text(name)
+        time = event.get('time')
+        venue_url = event.get('venue_URL')
+        venue_name = event.get('venue_name')
+        if time:
+            output_strings.append(f"<b>{time}:</b> ")
+        output_strings.append(f"{name}\n")
+        if venue_url and venue_name:
+            venue_name = escape_html_text(venue_name)
+            venue_hyperlink_part = make_hyperlink_part(venue_url, venue_name, LOCATION_SYMBOL)
+            output_strings.append(f'{venue_hyperlink_part}   ')
+        event_url = event.get("URL")
+        if event_url:
+            output_strings.append(f" {make_hyperlink_part(event_url, ' event link')}\n\n")
     return output_strings
 
 

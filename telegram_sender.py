@@ -2,7 +2,7 @@ import os
 import requests
 
 from config_handlers import load_config
-from messages_builder import messages_generator
+from telegram_messages_builder import messages_generator
 from logger import logger
 
 

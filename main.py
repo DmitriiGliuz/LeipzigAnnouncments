@@ -2,7 +2,7 @@ import os
 
 from config_handlers import load_config, set_config_property, InvalidConfigError
 from date_handlers import move_start_date_in_config_week_forward, set_start_date_to_closest_monday
-from messages_builder import create_files
+from telegram_messages_builder import create_files
 from telegram_sender import send_messages_from_files, parse_websites_and_send_messages
 
 config_is_valid = False
