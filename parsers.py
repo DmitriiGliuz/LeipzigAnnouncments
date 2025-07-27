@@ -1,7 +1,7 @@
 import locale
 import re
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, date
 import requests
 from bs4 import BeautifulSoup
 from requests.exceptions import RequestException
@@ -12,17 +12,16 @@ from logger import logger
 
 locale.setlocale(locale.LC_ALL, 'de_DE.UTF-8')
 
-PLANLOS_URL = "https://www.planlos-leipzig.org/"
-SACHSENPUNK_URL = "https://sachsenpunk.de/dates/"
-SONGKICK_URL = "https://www.songkick.com/metro-areas/28528-germany-leipzig"
-
 
 def add_spaces(string: str) -> str:
     """
-    Adds spaces between time and date in the string
-    It applies in Planlos Leipzig events
-    :param string:
-    :return:
+    Adds spaces between specific patterns in a given string. The function checks if the
+    string contains certain patterns and inserts spaces between matched groups.
+
+    :param string: The input string in which spaces need to be added based
+                   on predefined patterns.
+    :return: A modified string with spaces inserted between specific patterns.
+    :rtype: Str
     """
     result = string
     pattern = r'([a-zA-ZÄÃ¤ÖÜäöüß-]+)(\d{2}\.)|(\d{1,2}:\d{2})(\d{2}.\d{2}.\d{4})'
@@ -69,15 +68,16 @@ def get_website_content(url: str):
     return get_entry_content(soup)
 
 
-def get_planlos_events(start_date: datetime.date, final_date: datetime.date):
+def get_planlos_events(start_date: date, final_date: date):
     """
     Fetches events from Planlos Leipzig
     :param start_date:
     :param final_date:
     :return:
     """
+    url = "https://www.planlos-leipzig.org/"
     logger.info("Getting events from Planlos Leipzig...")
-    entry_content = get_website_content(PLANLOS_URL)
+    entry_content = get_website_content(url)
     if not entry_content:
         return {}
     try:
@@ -105,14 +105,24 @@ def get_planlos_events(start_date: datetime.date, final_date: datetime.date):
         while next_tr and next_tr.find("h3") is None:
             event_row = next_tr
             event_cells = event_row.find_all("td")
+            if event_cells is None or len(event_cells) != 2:
+                logger.error("No event cells found")
+                break
             time_cell = event_cells[0]
             event_cell = event_cells[1]
-            if event_cell.em:
+            if not event_cell.a:
+                logger.error("No event link found")
+                continue
+            if event_cell.em and event_cell.em.text:
                 place = event_cell.em.text
             else:
                 place = ""
+            name = event_cell.a.text.strip()
+            if not name:
+                logger.error("No event name found")
+                break
             event = {
-                "name": event_cell.a.text.strip(),
+                "name": name,
                 "place": place,
                 "time": add_spaces(time_cell.text.strip()),
                 "URL": event_cell.a.get("href")
@@ -124,15 +134,16 @@ def get_planlos_events(start_date: datetime.date, final_date: datetime.date):
     return events
 
 
-def get_sachsenpunk_events(start_date: datetime.date, final_date: datetime.date):
+def get_sachsenpunk_events(start_date: date, final_date: date):
     """
     Fetches events from Sachsenpunk
     :param start_date:
     :param final_date:
     :return:
     """
+    url = "https://sachsenpunk.de/dates/"
     logger.info("Getting events from Sachsenpunk...")
-    entry_content = get_website_content(SACHSENPUNK_URL)
+    entry_content = get_website_content(url)
     if not entry_content:
         return {}
     try:
@@ -151,7 +162,7 @@ def get_sachsenpunk_events(start_date: datetime.date, final_date: datetime.date)
         logger.info(f"Parsing p tag")
         if re.match(r"\d+\.\d+\.", p.text):
             logger.info("Checking if there is announcement for the new year")
-            # Checking if there is announcement for the new year
+            # Checking if there is an announcement for the new year
             current_month = int(p.text[3:5])
             if current_month < previous_month or (month_now == 12 and current_month == 1):
                 logger.info("Announcement for the new year is found")
@@ -190,15 +201,16 @@ def get_full_songkick_url(ending: str) -> str:
     return "https://www.songkick.com" + ending
 
 
-def get_songkick_events(start_date: datetime.date, final_date: datetime.date):
+def get_songkick_events(start_date: date, final_date: date):
     """
     Fetches events from Songkick
     :param start_date:
     :param final_date:
     :return:
     """
+    url = "https://www.songkick.com/metro-areas/28528-germany-leipzig"
     logger.info("Getting events from Songkick...")
-    soup = get_soup(SONGKICK_URL)
+    soup = get_soup(url)
     if not soup:
         return {}
     try:
@@ -212,7 +224,14 @@ def get_songkick_events(start_date: datetime.date, final_date: datetime.date):
         logger.info("Parsing event element")
         event = {}
         time_tag = event_element.find("time")
-        datetime_property = time_tag['datetime']
+        if time_tag is None:
+            logger.error("No time tag found")
+            continue
+        try:
+            datetime_property = time_tag['datetime']
+        except KeyError:
+            logger.error("No datetime property found")
+            continue
         if len(datetime_property) == 10:
             current_datetime = datetime.strptime(datetime_property, "%Y-%m-%d")
             time_str = None
@@ -230,7 +249,6 @@ def get_songkick_events(start_date: datetime.date, final_date: datetime.date):
             break
 
         date_str = str(current_datetime.date())
-        events[date_str].append(event)
         event['time'] = time_str
         try:
             logger.info("Finding div with artist and venue location")
@@ -263,6 +281,8 @@ def get_songkick_events(start_date: datetime.date, final_date: datetime.date):
         event['venue_name'] = venue_name
         event['venue_URL'] = venue_url
         logger.info(f"Event: {event} is fetched")
+        events[date_str].append(event)
+
     logger.info("Events from Songkick are fetched")
     return events
 
