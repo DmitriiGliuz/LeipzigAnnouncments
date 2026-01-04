@@ -1,4 +1,5 @@
 import os
+
 import requests
 
 from config_handlers import load_config
